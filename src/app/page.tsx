@@ -23,134 +23,126 @@ export default function HomePage() {
       setProducts(prodData || []);
       setConfig(confData);
       
-      // Inject theme dynamically using CSS custom properties
       if (confData) {
-        document.documentElement.style.setProperty('--primary', confData.primary_color || '#4F46E5');
+        document.documentElement.style.setProperty('--primary', confData.primary_color || '#6366f1');
         if (confData.payment_methods?.length) setSelectedPayment(confData.payment_methods[0]);
       }
     }
     fetchData();
   }, []);
 
-  const addToCart = (product: any) => {
-    setCart([...cart, product]);
-  };
-
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || cart.length === 0) return alert('Cart is empty or email missing!');
+    if (!email || cart.length === 0) return;
 
     const total = cart.reduce((acc, item) => acc + item.price, 0);
-
     const { error } = await supabase.from('orders').insert({
-      email,
-      items: cart,
-      total_amount: total,
-      payment_method: selectedPayment,
-      status: 'Pending'
+      email, items: cart, total_amount: total, payment_method: selectedPayment, status: 'Pending'
     });
 
     if (!error) {
-      alert('Order placed successfully! Check your email for delivery details.');
+      alert('Order securely dispatched! Check your email inbox for access credentials.');
       setCart([]);
       setIsCartOpen(false);
-    } else {
-      alert('Checkout failed. Please try again.');
     }
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto min-h-screen bg-zinc-950 text-white font-sans">
-      {/* Dynamic No-Code Ticker */}
-      {config?.ticker_text && (
-        <div className="fixed top-0 left-0 w-full bg-[var(--primary)] text-black font-black py-2 text-center text-sm z-50 overflow-hidden">
-          <div className="inline-block animate-pulse">{config.ticker_text}</div>
+    <main className="w-full flex-1 flex flex-col px-6 md:px-12 max-w-[1600px] mx-auto pb-12">
+      <header className="w-full flex justify-between items-center py-8 border-b border-zinc-800/60 mb-12">
+        <div className="flex flex-col">
+          <h1 className="text-2xl font-black tracking-tight text-white uppercase">{config?.site_name || 'BloxShop'}</h1>
+          <p className="text-xs text-zinc-500 mt-0.5 font-medium tracking-wide">Premium Roblox Marketplace</p>
         </div>
-      )}
-
-      <header className="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4 pt-12">
-        <h1 className="text-3xl font-extrabold tracking-wider">{config?.site_name || 'Roblox Shop'}</h1>
-        <button 
-          onClick={() => setIsCartOpen(true)}
-          className="bg-[var(--primary)] text-black px-5 py-2.5 rounded-lg font-bold hover:opacity-90 transition"
-        >
-          🛒 Cart ({cart.length})
-        </button>
+        <div className="flex items-center gap-4">
+          <a href="/admin" className="text-xs font-semibold text-zinc-400 hover:text-white tracking-wide transition">
+            Admin Portal
+          </a>
+          <button 
+            onClick={() => setIsCartOpen(true)}
+            className="bg-white text-black font-semibold text-xs uppercase tracking-wider px-5 py-3 rounded-lg hover:bg-zinc-200 transition shadow-sm"
+          >
+            Basket ({cart.length})
+          </button>
+        </div>
       </header>
 
-      {/* Main Grid Catalog */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
         {products.map((product) => (
-          <div key={product.id} className="bg-zinc-900 p-4 rounded-xl border border-zinc-800 flex flex-col justify-between hover:border-zinc-700 transition">
-            <img src={product.image_url || 'https://via.placeholder.com/300'} alt={product.title} className="w-full h-48 object-cover rounded-lg mb-4 bg-zinc-800" />
-            <div>
-              <span className="text-xs text-[var(--primary)] font-bold uppercase tracking-widest">{product.category}</span>
-              <h3 className="text-xl font-bold mt-1 text-white">{product.title}</h3>
-              <p className="text-zinc-400 text-sm mt-1 line-clamp-2">{product.description}</p>
+          <div key={product.id} className="bg-[var(--bg-card)] rounded-2xl border border-zinc-800/80 overflow-hidden flex flex-col group transition hover:border-zinc-700/80">
+            <div className="w-full h-56 bg-zinc-950 overflow-hidden relative">
+              <img src={product.image_url || 'https://via.placeholder.com/400x300'} alt={product.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
             </div>
-            <div className="mt-4 flex items-center justify-between">
-              <span className="text-xl font-black text-[var(--primary)]">${product.price}</span>
-              <button 
-                onClick={() => addToCart(product)}
-                className="bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-white px-3 py-1.5 rounded-md text-sm transition"
-              >
-                Add to Cart
-              </button>
+            <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+              <div>
+                <span className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-widest block mb-1">{product.category}</span>
+                <h3 className="text-lg font-bold text-white tracking-tight">{product.title}</h3>
+                <p className="text-zinc-400 text-xs mt-1.5 leading-relaxed font-medium line-clamp-2">{product.description}</p>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-zinc-800/40">
+                <span className="text-xl font-black tracking-tight text-white">${product.price}</span>
+                <button 
+                  onClick={() => setCart([...cart, product])}
+                  className="bg-zinc-900 border border-zinc-800 text-zinc-200 hover:text-white hover:bg-zinc-800 px-4 py-2 rounded-lg text-xs font-bold transition"
+                >
+                  Add to Cart
+                </button>
+              </div>
             </div>
           </div>
         ))}
-      </div>
+      </section>
 
-      {/* Slide-out Checkout Interface */}
+      {/* Slideout Cart panel */}
       {isCartOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-end z-50">
-          <div className="bg-zinc-900 w-full max-w-md h-full p-6 flex flex-col justify-between text-white border-l border-zinc-800">
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Your Basket</h2>
-                <button onClick={() => setIsCartOpen(false)} className="text-zinc-400 hover:text-white text-xl">✕</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-end z-50 animate-fadeIn">
+          <div className="bg-zinc-950 w-full max-w-md h-full p-8 flex flex-col justify-between text-white border-l border-zinc-900 shadow-2xl">
+            <div className="flex flex-col h-full overflow-hidden">
+              <div className="flex justify-between items-center mb-8 pb-4 border-b border-zinc-900">
+                <h2 className="text-lg font-bold uppercase tracking-wider">Your Basket</h2>
+                <button onClick={() => setIsCartOpen(false)} className="text-zinc-500 hover:text-white transition text-sm">✕ Close</button>
               </div>
               
-              <div className="space-y-4 overflow-y-auto max-h-[60vh]">
-                {cart.length === 0 ? <p className="text-zinc-500">Your cart is currently empty.</p> : null}
-                {cart.map((item, index) => (
-                  <div key={index} className="flex justify-between bg-zinc-800 p-3 rounded-lg border border-zinc-700">
+              <div className="space-y-3 flex-1 overflow-y-auto pr-1">
+                {cart.length === 0 && <p className="text-zinc-500 text-xs font-medium">Your basket is currently empty.</p>}
+                {cart.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-zinc-900/40 border border-zinc-900 p-4 rounded-xl">
                     <div>
-                      <p className="font-semibold text-white">{item.title}</p>
-                      <p className="text-xs text-[var(--primary)] font-bold">${item.price}</p>
+                      <p className="font-semibold text-sm text-white tracking-tight">{item.title}</p>
+                      <p className="text-[11px] text-[var(--primary)] font-bold mt-0.5">${item.price}</p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <form onSubmit={handleCheckout} className="border-t border-zinc-800 pt-4 space-y-4">
+            <form onSubmit={handleCheckout} className="border-t border-zinc-900 pt-6 space-y-4">
               <div>
-                <label className="block text-sm mb-1 text-zinc-400">Delivery Email Address</label>
-                <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-2.5 rounded bg-zinc-800 border border-zinc-700 text-white" placeholder="yourname@gmail.com"/>
+                <label className="block text-[11px] uppercase tracking-wider font-bold mb-1.5 text-zinc-400">Delivery Email</label>
+                <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 text-sm rounded-lg bg-zinc-900 border border-zinc-800 text-white focus:outline-none focus:border-zinc-700 transition" placeholder="example@domain.com"/>
               </div>
 
               <div>
-                <label className="block text-sm mb-1 text-zinc-400">Select Gateway</label>
-                <select value={selectedPayment} onChange={(e) => setSelectedPayment(e.target.value)} className="w-full p-2.5 rounded bg-zinc-800 border border-zinc-700 text-white">
+                <label className="block text-[11px] uppercase tracking-wider font-bold mb-1.5 text-zinc-400">Payment Channel</label>
+                <select value={selectedPayment} onChange={(e) => setSelectedPayment(e.target.value)} className="w-full p-3 text-sm rounded-lg bg-zinc-900 border border-zinc-800 text-white focus:outline-none focus:border-zinc-700 transition">
                   {config?.payment_methods?.map((method: string) => (
                     <option key={method} value={method}>{method}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex justify-between text-lg font-bold border-t border-zinc-800 pt-2">
-                <span>Grand Total:</span>
-                <span className="text-[var(--primary)]">${cart.reduce((a, b) => a + b.price, 0).toFixed(2)}</span>
+              <div className="flex justify-between text-base font-bold pt-4 border-t border-zinc-900">
+                <span className="text-zinc-400">Total Sum:</span>
+                <span className="text-white font-black">${cart.reduce((a, b) => a + b.price, 0).toFixed(2)}</span>
               </div>
 
-              <button type="submit" className="w-full bg-[var(--primary)] py-3 rounded-xl font-bold text-black text-center hover:opacity-90 transition">
-                Secure Instant Checkout
+              <button type="submit" className="w-full bg-white text-black font-bold text-xs uppercase tracking-widest py-4 rounded-xl hover:bg-zinc-200 transition">
+                Authorize Checkout
               </button>
             </form>
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
