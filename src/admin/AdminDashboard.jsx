@@ -36,11 +36,27 @@ export default function AdminDashboard() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
-    if (!user) { navigate('/auth'); return }
-    if (!isAdmin && profile !== null) { navigate('/'); return }
-  }, [user, isAdmin, profile])
+    // 1. If no user is logged in, redirect to auth page
+    if (!user) { 
+      navigate('/auth')
+      return 
+    }
+    
+    // 2. Safely compute if they are an admin by checking both the context flag AND the database role string
+    const userRole = profile?.role || user?.user_metadata?.role
+    const hasAdminAccess = isAdmin || userRole === 'admin'
 
-  if (!user || !isAdmin) {
+    // 3. Only kick them out if profile data has finished loading and they are definitively NOT an admin
+    if (profile !== null && !hasAdminAccess) { 
+      navigate('/')
+      return 
+    }
+  }, [user, isAdmin, profile, navigate])
+
+  // Compute validation helper for the template layout safety
+  const verifiedAdmin = isAdmin || profile?.role === 'admin'
+
+  if (!user || !verifiedAdmin) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
         <div className="spinner spinner-lg" style={{ margin: '0 auto 16px' }} />
@@ -105,7 +121,7 @@ export default function AdminDashboard() {
             <LogOut size={17} /> Sign Out
           </button>
           <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--color-text-muted)' }}>
-            {profile?.display_name}<br />
+            {profile?.display_name || 'Admin'}<br />
             <span style={{ fontSize: 11 }}>{user.email}</span>
           </div>
         </div>
