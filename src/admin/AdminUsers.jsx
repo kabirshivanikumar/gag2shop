@@ -30,10 +30,11 @@ export default function AdminUsers() {
     toast.success(`User role → ${newRole}`)
   }
 
+  // FIXED: Filter checks email and full_name instead of missing username fields
   const filtered = users.filter(u =>
-    (u.display_name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (u.roblox_username || '').toLowerCase().includes(search.toLowerCase()) ||
-    (u.username || '').toLowerCase().includes(search.toLowerCase())
+    (u.full_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (u.roblox_user_id || '').toLowerCase().includes(search.toLowerCase()) ||
+    (u.email || '').toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -52,7 +53,7 @@ export default function AdminUsers() {
             <thead>
               <tr>
                 <th>User</th>
-                <th>Roblox Username</th>
+                <th>Roblox ID / Details</th>
                 <th>Role</th>
                 <th>Joined</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -73,15 +74,18 @@ export default function AdminUsers() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: 14, fontWeight: 700, flexShrink: 0
                       }}>
-                        {(u.display_name || u.username || '?')[0].toUpperCase()}
+                        {/* FIXED: Safe fallback character lookup */}
+                        {(u.full_name || u.email || '?')[0].toUpperCase()}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.display_name || u.username || 'Unknown'}</div>
-                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{u.id.slice(0, 8)}...</div>
+                        {/* FIXED: Uses full_name and email columns from your database */}
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || 'No Name Added'}</div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{u.email}</div>
                       </div>
                     </div>
                   </td>
-                  <td style={{ fontSize: 13 }}>{u.roblox_username || '—'}</td>
+                  {/* FIXED: Maps to your roblox_user_id column */}
+                  <td style={{ fontSize: 13 }}>{u.roblox_user_id ? `ID: ${u.roblox_user_id}` : '—'}</td>
                   <td>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -91,11 +95,11 @@ export default function AdminUsers() {
                       border: `1px solid ${u.role === 'admin' ? 'rgba(99,102,241,0.3)' : 'var(--color-border)'}`
                     }}>
                       {u.role === 'admin' ? <Shield size={11} /> : <User size={11} />}
-                      {u.role}
+                      {u.role || 'customer'}
                     </span>
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                    {new Date(u.created_at).toLocaleDateString()}
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}
                   </td>
                   <td>
                     <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
