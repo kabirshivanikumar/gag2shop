@@ -19,7 +19,7 @@ export default function CheckoutPage() {
   const taxRate = parseFloat(get('tax_rate', '0')) / 100
   const builtinMethods = getJSON('payment_methods', ['paypal'])
 
-  const [allMethods, setAllMethods] = useState([]) // combined builtin + custom
+  const [allMethods, setAllMethods] = useState([]) 
   const [customMethods, setCustomMethods] = useState([])
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -36,14 +36,12 @@ export default function CheckoutPage() {
     discount_code: '',
   })
 
-  // Keep form in sync if profile loads after mount
   useEffect(() => {
     if (user?.email && !form.email) setForm(f => ({ ...f, email: user.email }))
     if (profile?.display_name && !form.name) setForm(f => ({ ...f, name: profile.display_name }))
     if (profile?.roblox_username && !form.roblox_username) setForm(f => ({ ...f, roblox_username: profile.roblox_username }))
   }, [user, profile])
 
-  // Load custom payment methods from DB
   useEffect(() => {
     loadPaymentMethods()
   }, [builtinMethods])
@@ -57,13 +55,11 @@ export default function CheckoutPage() {
     const custom = data || []
     setCustomMethods(custom)
 
-    // Build combined list: builtin first, then custom
     const builtin = builtinMethods.map(key => ({ key, label: key.charAt(0).toUpperCase() + key.slice(1), isCustom: false }))
     const customList = custom.map(m => ({ key: `custom_${m.id}`, label: m.name, icon: m.icon, isCustom: true, data: m }))
     const combined = [...builtin, ...customList]
     setAllMethods(combined)
 
-    // Set default payment selection
     if (combined.length > 0 && !form.payment) {
       setForm(f => ({ ...f, payment: combined[0].key }))
     }
@@ -75,7 +71,6 @@ export default function CheckoutPage() {
     : 0
   const total = Math.max(0, subtotal - discountAmount + tax)
 
-  // Find selected method details
   const selectedMethod = allMethods.find(m => m.key === form.payment)
   const selectedCustom = selectedMethod?.isCustom ? selectedMethod.data : null
 
@@ -106,7 +101,6 @@ export default function CheckoutPage() {
     try {
       const orderData = {
         user_id: user?.id || null,
-        // Store email for both guests and logged-in users for confirmation email
         guest_email: form.email,
         items: items.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity, image_url: i.image_url })),
         subtotal,
@@ -124,6 +118,7 @@ export default function CheckoutPage() {
         },
       }
 
+      // 1. Save the initial pending record to Supabase
       const { data: newOrder, error } = await supabase.from('orders').insert(orderData).select().single()
       if (error) throw error
 
@@ -131,9 +126,29 @@ export default function CheckoutPage() {
         await supabase.from('discount_codes').update({ used_count: discount.used_count + 1 }).eq('id', discount.id)
       }
 
-      // Send email
-      await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
+      // 2. NOWPayments Automation Routing
+      if (form.payment === 'crypto') {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-nowpayments-invoice`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: newOrder.id, amount: total })
+        })
+        
+        const session = await response.json()
+        if (!response.ok || !session.invoice_url) {
+          throw new Error(session.error || 'Could not generate crypto invoice.')
+        }
 
+        await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
+        clearCart()
+
+        // Handoff checkout flow to automated crypto widget gateway
+        window.location.href = session.invoice_url
+        return
+      }
+
+      // 3. Fallback routing for traditional offline payments
+      await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
       setOrder(newOrder)
       clearCart()
       setStep(3)
@@ -154,7 +169,7 @@ export default function CheckoutPage() {
     )
   }
 
-  // Confirmation page
+  // Confirmation Page Fallback (Only used if payment is manual/non-crypto)
   if (step === 3 && order) {
     return (
       <div style={{ padding: '60px 24px', maxWidth: 560, margin: '0 auto' }}>
@@ -169,7 +184,6 @@ export default function CheckoutPage() {
           </p>
         </div>
 
-        {/* Payment instructions */}
         <div className="card" style={{ padding: 24, marginBottom: 20 }}>
           <h4 style={{ fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
             <CreditCard size={18} color="var(--color-primary)" /> Payment Instructions
@@ -216,9 +230,8 @@ export default function CheckoutPage() {
       <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, marginBottom: 32 }}>Checkout</h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 28, alignItems: 'start' }}>
-        {/* Left */}
+        {/* Left Side: Form Details */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Details */}
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>1</span>
@@ -241,7 +254,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Payment */}
+          {/* Payment Method Selector */}
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>2</span>
@@ -276,14 +289,13 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Notes */}
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 12 }}>Order Notes <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', fontSize: 13 }}>(optional)</span></h3>
             <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any special instructions for your order..." rows={3} />
           </div>
         </div>
 
-        {/* Right: Summary */}
+        {/* Right Side: Sticky Checkout Drawer */}
         <div style={{ position: 'sticky', top: 80 }}>
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18 }}>Order Summary</h3>
@@ -304,7 +316,6 @@ export default function CheckoutPage() {
 
             <div style={{ height: 1, background: 'var(--color-border)', margin: '16px 0' }} />
 
-            {/* Discount */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
@@ -320,7 +331,6 @@ export default function CheckoutPage() {
               {discount && <div style={{ fontSize: 12, color: 'var(--color-success)', marginTop: 5 }}>✓ "{discount.code}" applied</div>}
             </div>
 
-            {/* Totals */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <SummaryRow label="Subtotal" value={`${currency}${subtotal.toFixed(2)}`} />
               {discountAmount > 0 && <SummaryRow label="Discount" value={`-${currency}${discountAmount.toFixed(2)}`} color="var(--color-success)" />}
@@ -361,7 +371,7 @@ function BuiltinInstructions({ method, total, currency, orderId, paypalEmail }) 
   const map = {
     paypal: paypalEmail ? `Send ${currency}${total.toFixed(2)} to PayPal:\n${paypalEmail}\n\nUse "Goods & Services" and include order number as note.` : 'PayPal payment details will be sent to your email shortly.',
     stripe: 'A secure payment link will be sent to your email. Click it to complete your card payment.',
-    crypto: `Send ${currency}${total.toFixed(2)} worth of crypto.\nWallet details will be emailed to you.\nReference: ${orderId}`,
+    crypto: `Redirecting you to our secure payment gateway...`,
     bank: `Bank transfer details will be emailed to you.\nAmount: ${currency}${total.toFixed(2)}\nReference: ${orderId}`,
     cashapp: `Send ${currency}${total.toFixed(2)} via CashApp.\nDetails will be emailed to you.\nReference: ${orderId}`,
     venmo: `Send ${currency}${total.toFixed(2)} via Venmo.\nDetails will be emailed to you.\nReference: ${orderId}`,
