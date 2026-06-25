@@ -118,7 +118,7 @@ export default function CheckoutPage() {
         },
       }
 
-      // 1. Save the initial pending record to Supabase
+      // 1. Save initial record into PostgreSQL database
       const { data: newOrder, error } = await supabase.from('orders').insert(orderData).select().single()
       if (error) throw error
 
@@ -126,28 +126,28 @@ export default function CheckoutPage() {
         await supabase.from('discount_codes').update({ used_count: discount.used_count + 1 }).eq('id', discount.id)
       }
 
-      // 2. NOWPayments Automation Routing
+      // 2. NOWPayments Secure Automation Loop via Edge Functions
       if (form.payment === 'crypto') {
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-nowpayments-invoice`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: newOrder.id, amount: total })
+        const { data: session, error: invokeError } = await supabase.functions.invoke('create-nowpayments-invoice', {
+          body: { 
+            orderId: newOrder.id,
+            currency: 'usd'
+          }
         })
-        
-        const session = await response.json()
-        if (!response.ok || !session.invoice_url) {
-          throw new Error(session.error || 'Could not generate crypto invoice.')
+
+        if (invokeError || !session?.invoice_url) {
+          throw new Error(invokeError?.message || 'Could not generate crypto invoice.')
         }
 
         await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
         clearCart()
 
-        // Handoff checkout flow to automated crypto widget gateway
+        // Handoff user workflow to the dynamic gateway invoice url
         window.location.href = session.invoice_url
         return
       }
 
-      // 3. Fallback routing for traditional offline payments
+      // 3. Alternative standard manual routing fallback
       await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
       setOrder(newOrder)
       clearCart()
@@ -169,7 +169,7 @@ export default function CheckoutPage() {
     )
   }
 
-  // Confirmation Page Fallback (Only used if payment is manual/non-crypto)
+  // Confirmation panel markup layout logic
   if (step === 3 && order) {
     return (
       <div style={{ padding: '60px 24px', maxWidth: 560, margin: '0 auto' }}>
@@ -230,7 +230,6 @@ export default function CheckoutPage() {
       <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, marginBottom: 32 }}>Checkout</h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 28, alignItems: 'start' }}>
-        {/* Left Side: Form Details */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -254,7 +253,6 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Payment Method Selector */}
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>2</span>
@@ -295,7 +293,6 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Right Side: Sticky Checkout Drawer */}
         <div style={{ position: 'sticky', top: 80 }}>
           <div className="card" style={{ padding: 24 }}>
             <h3 style={{ fontWeight: 700, marginBottom: 18 }}>Order Summary</h3>
