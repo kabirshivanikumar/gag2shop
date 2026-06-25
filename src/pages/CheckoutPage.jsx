@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, CheckCircle, CreditCard, ChevronDown } from 'lucide-react'
+import { Shield, CheckCircle, CreditCard, Upload, Eye } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
@@ -26,6 +26,11 @@ export default function CheckoutPage() {
   const [discount, setDiscount] = useState(null)
   const [discountError, setDiscountError] = useState('')
   const [step, setStep] = useState(1)
+
+  // Screenshot upload state for manual/custom payments
+  const [screenshotFile, setScreenshotFile] = useState(null)
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false)
+  const [screenshotUrl, setScreenshotUrl] = useState('')
 
   const [form, setForm] = useState({
     email: user?.email || '',
@@ -91,6 +96,51 @@ export default function CheckoutPage() {
     toast.success(`Code applied — ${data.type === 'percent' ? `-${data.value}%` : `-${currency}${data.value}`}`)
   }
 
+  // Handles raw image upload directly into Supabase Storage bucket
+  async function handleScreenshotUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setScreenshotFile(file)
+    setUploadingScreenshot(true)
+
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${order?.id || Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+      const filePath = `receipts/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('payment-proofs')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('payment-proofs')
+        .getPublicUrl(filePath)
+
+      setScreenshotUrl(publicUrl)
+
+      // Attach screenshot link back to active order record instance
+      if (order?.id) {
+        await supabase
+          .from('orders')
+          .update({ 
+            delivery_details: { 
+              ...order.delivery_details, 
+              payment_proof_url: publicUrl 
+            } 
+          })
+          .eq('id', order.id)
+      }
+
+      toast.success('Screenshot uploaded successfully! Staff will verify shortly.')
+    } catch (err) {
+      toast.error('Upload failed: ' + err.message)
+    } finally {
+      setUploadingScreenshot(false)
+    }
+  }
+
   async function placeOrder() {
     if (!form.email.trim()) { toast.error('Email is required'); return }
     if (!form.name.trim()) { toast.error('Name is required'); return }
@@ -99,6 +149,9 @@ export default function CheckoutPage() {
 
     setLoading(true)
     try {
+      // Determine initial order verification statuses based on payment routing choices
+      const isCryptoAutomated = form.payment === 'crypto'
+      
       const orderData = {
         user_id: user?.id || null,
         guest_email: form.email,
@@ -106,7 +159,8 @@ export default function CheckoutPage() {
         subtotal,
         tax,
         total,
-        status: 'pending',
+        // Automated crypto stays pending for webhook. Custom/Manual options go immediately to on-hold.
+        status: isCryptoAutomated ? 'pending' : 'on-hold',
         payment_method: form.payment,
         payment_status: 'pending',
         roblox_username: form.roblox_username,
@@ -115,10 +169,11 @@ export default function CheckoutPage() {
           discount_code: form.discount_code || null,
           discount_amount: discountAmount,
           customer_name: form.name,
+          payment_proof_url: null
         },
       }
 
-      // 1. Save initial record into PostgreSQL database
+      // 1. Save state structure into primary orders table
       const { data: newOrder, error } = await supabase.from('orders').insert(orderData).select().single()
       if (error) throw error
 
@@ -126,13 +181,10 @@ export default function CheckoutPage() {
         await supabase.from('discount_codes').update({ used_count: discount.used_count + 1 }).eq('id', discount.id)
       }
 
-      // 2. NOWPayments Secure Automation Loop via Edge Functions
+      // 2. NOWPayments Secure API Verification Loop
       if (form.payment === 'crypto') {
         const { data: session, error: invokeError } = await supabase.functions.invoke('create-nowpayments-invoice', {
-          body: { 
-            orderId: newOrder.id,
-            currency: 'usd'
-          }
+          body: { orderId: newOrder.id, currency: 'usd' }
         })
 
         if (invokeError || !session?.invoice_url) {
@@ -142,12 +194,11 @@ export default function CheckoutPage() {
         await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
         clearCart()
 
-        // Handoff user workflow to the dynamic gateway invoice url
         window.location.href = session.invoice_url
         return
       }
 
-      // 3. Alternative standard manual routing fallback
+      // 3. Fallback logic for Custom Methods (On-Hold until verified manually via receipt)
       await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
       setOrder(newOrder)
       clearCart()
@@ -169,18 +220,22 @@ export default function CheckoutPage() {
     )
   }
 
-  // Confirmation panel markup layout logic
+  // Confirmation Success Portal Step View Layout
   if (step === 3 && order) {
+    const isManualVerification = form.payment !== 'crypto'
+
     return (
       <div style={{ padding: '60px 24px', maxWidth: 560, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(16,185,129,0.15)', border: '2px solid var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-            <CheckCircle size={36} color="var(--color-success)" />
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: isManualVerification ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.15)', border: `2px solid ${isManualVerification ? 'var(--color-warning)' : 'var(--color-success)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <CheckCircle size={36} color={isManualVerification ? 'var(--color-warning)' : 'var(--color-success)'} />
           </div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Order Placed!</h2>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, marginBottom: 8 }}>
+            {isManualVerification ? 'Order On Hold' : 'Order Placed!'}
+          </h2>
           <p style={{ color: 'var(--color-text-muted)' }}>
-            Order <strong style={{ color: 'var(--color-primary)' }}>{order.order_number}</strong> confirmed.
-            Check {form.email} for your receipt.
+            Order <strong style={{ color: 'var(--color-primary)' }}>{order.order_number}</strong> created. 
+            {isManualVerification ? ' Upload your payment proof below to notify our fulfillment staff.' : ' Awaiting network payment confirmation.'}
           </p>
         </div>
 
@@ -212,9 +267,33 @@ export default function CheckoutPage() {
           ) : (
             <BuiltinInstructions method={form.payment} total={total} currency={currency} orderId={order.order_number} paypalEmail={get('paypal_email')} />
           )}
+
           <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--color-warning)' }}>
             ⚠️ Include your order number <strong>{order.order_number}</strong> as payment reference
           </div>
+
+          {/* Screenshot Upload Interface Wrapper Form Component */}
+          {isManualVerification && (
+            <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--color-border)' }}>
+              <h5 style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Upload Payment Screenshot *</h5>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                  <Upload size={16} /> 
+                  {uploadingScreenshot ? 'Uploading File...' : 'Choose Screenshot Image'}
+                  <input type="file" accept="image/*" onChange={handleScreenshotUpload} disabled={uploadingScreenshot} style={{ display: 'none' }} />
+                </label>
+                
+                {screenshotUrl && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-success)', background: 'rgba(16,185,129,0.08)', padding: '8px 12px', borderRadius: 6 }}>
+                    <span>✓ Proof of payment linked to order files.</span>
+                    <a href={screenshotUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, color: 'var(--color-primary)', fontWeight: 600 }}>
+                      <Eye size={14} /> View
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 12 }}>
