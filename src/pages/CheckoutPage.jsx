@@ -106,7 +106,9 @@ export default function CheckoutPage() {
     try {
       const fileExt = file.name.split('.').pop()
       const fileName = `${order?.id || Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `receipts/${fileName}`
+      
+      // Placed at bucket root level to stay perfectly aligned with RLS policies
+      const filePath = `${fileName}`
 
       const { error: uploadError } = await supabase.storage
         .from('payment-proofs')
@@ -120,15 +122,12 @@ export default function CheckoutPage() {
 
       setScreenshotUrl(publicUrl)
 
-      // Attach screenshot link back to active order record instance
+      // CRITICAL PIPELINE CORRECTION: Save string token link into its standalone payment_proof column tracking architecture
       if (order?.id) {
         await supabase
           .from('orders')
           .update({ 
-            delivery_details: { 
-              ...order.delivery_details, 
-              payment_proof_url: publicUrl 
-            } 
+            payment_proof: publicUrl 
           })
           .eq('id', order.id)
       }
@@ -149,7 +148,6 @@ export default function CheckoutPage() {
 
     setLoading(true)
     try {
-      // Determine initial order verification statuses based on payment routing choices
       const isCryptoAutomated = form.payment === 'crypto'
       
       const orderData = {
@@ -159,21 +157,19 @@ export default function CheckoutPage() {
         subtotal,
         tax,
         total,
-        // Automated crypto stays pending for webhook. Custom/Manual options go immediately to on-hold.
         status: isCryptoAutomated ? 'pending' : 'on-hold',
         payment_method: form.payment,
         payment_status: 'pending',
         roblox_username: form.roblox_username,
         notes: form.notes,
+        payment_proof: null, // Set field properties to null during entry generation step
         delivery_details: {
           discount_code: form.discount_code || null,
           discount_amount: discountAmount,
-          customer_name: form.name,
-          payment_proof_url: null
+          customer_name: form.name
         },
       }
 
-      // 1. Save state structure into primary orders table
       const { data: newOrder, error } = await supabase.from('orders').insert(orderData).select().single()
       if (error) throw error
 
@@ -181,7 +177,6 @@ export default function CheckoutPage() {
         await supabase.from('discount_codes').update({ used_count: discount.used_count + 1 }).eq('id', discount.id)
       }
 
-      // 2. NOWPayments Secure API Verification Loop
       if (form.payment === 'crypto') {
         const { data: session, error: invokeError } = await supabase.functions.invoke('create-nowpayments-invoice', {
           body: { orderId: newOrder.id, currency: 'usd' }
@@ -198,7 +193,6 @@ export default function CheckoutPage() {
         return
       }
 
-      // 3. Fallback logic for Custom Methods (On-Hold until verified manually via receipt)
       await sendOrderConfirmation({ order: newOrder, settings, customerEmail: form.email, customerName: form.name })
       setOrder(newOrder)
       clearCart()
@@ -220,7 +214,6 @@ export default function CheckoutPage() {
     )
   }
 
-  // Confirmation Success Portal Step View Layout
   if (step === 3 && order) {
     const isManualVerification = form.payment !== 'crypto'
 
@@ -272,7 +265,6 @@ export default function CheckoutPage() {
             ⚠️ Include your order number <strong>{order.order_number}</strong> as payment reference
           </div>
 
-          {/* Screenshot Upload Interface Wrapper Form Component */}
           {isManualVerification && (
             <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--color-border)' }}>
               <h5 style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Upload Payment Screenshot *</h5>
