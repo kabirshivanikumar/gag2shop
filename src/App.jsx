@@ -14,6 +14,8 @@ import AuthPage from './pages/AuthPage'
 import CheckoutPage from './pages/CheckoutPage'
 import OrdersPage from './pages/OrdersPage'
 import ProfilePage from './pages/ProfilePage'
+import TermsPage from './pages/TermsPage'       // Imported Terms Component
+import PrivacyPage from './pages/PrivacyPage'   // Imported Privacy Component
 import AdminDashboard from './admin/AdminDashboard'
 
 function Ticker() {
@@ -73,6 +75,8 @@ function ShopLayout() {
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/terms" element={<TermsPage />} />         {/* Registered Terms Route */}
+            <Route path="/privacy" element={<PrivacyPage />} />     {/* Registered Privacy Route */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </MaintenanceGuard>
